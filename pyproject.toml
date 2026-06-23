@@ -2,4 +2,7 @@
 name = "rl"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "huggingface-hub>=1.20.1",
+    "torch>=2.12.1",
+]
