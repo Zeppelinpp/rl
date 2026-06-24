@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import torch
 from torch.nn import functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import re
 
 device = torch.device("mps")
 
@@ -20,17 +21,17 @@ class RolloutSample:
 
 
 def reward_fn(response: str):
-    import re
-
+    text = response.strip()
+    lower = text.lower()
     reward = 0.0
-    m = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL)
+
+    if "berlin" in lower:
+        reward += 0.7
+    m = re.search(r"<answer>\s*(.*?)\s*</answer>", text, re.DOTALL | re.IGNORECASE)
     if m is not None:
-        reward += 0.2  # format correct
-        answer_text = m.group(1).strip()
-        if answer_text == "Berlin":
-            reward += 0.7
-        elif answer_text.lower() == "berlin":
-            reward += 0.5
+        answer = m.group(1).strip().lower().strip(".。")
+        if answer == "berlin" and "<answer>" in text and "</answer>" in text:
+            reward += 0.2
     return reward
 
 
@@ -74,7 +75,6 @@ def compute_advantages_in_place(samples, group_size):
 def compute_kl(new_logprobs, ref_logprobs):
     """Surrogate KL penalty on sampled tokens."""
     log_ratio = (ref_logprobs - new_logprobs).float()
-    log_ratio = torch.clamp(log_ratio, min=-20.0, max=20.0)
     return torch.exp(log_ratio) - log_ratio - 1
 
 
@@ -145,7 +145,8 @@ def grpo_loss(model, batch: dict, clip_eps: float, kl_coef: float):
     kl_loss = compute_kl(new_logprobs, ref_logprobs)
 
     loss_per_token = (policy_loss + kl_coef * kl_loss) * response_mask
-    loss = loss_per_token.sum() / response_mask.sum().clamp(min=1.0)
+    loss_per_sample = loss_per_token.sum() / response_mask.sum().clamp(min=1.0)
+    loss = loss_per_sample.mean()
     denom = response_mask.sum().clamp(min=1.0)
 
     metrics = {
@@ -249,6 +250,9 @@ def rollout(
                 advantage=0.0,
             )
         )
+        print("=" * 80)
+        print("prompt:", repeated_prompts[i])
+        print("response:", repr(response))
 
     # advantage = r_i - mean(reward) / (std(reward) + 1e-5)
     compute_advantages_in_place(samples, group_size=group_size)
@@ -262,7 +266,7 @@ def train(
     lr: float,
     max_new_tokens: int,
     group_size: int = 5,
-    ppo_epochs: int = 2,
+    ppo_epochs: int = 1,
 ):
     model_path = "models/qwen3-0.6b"
     dtype = torch.bfloat16
@@ -324,7 +328,7 @@ def train(
 
 if __name__ == "__main__":
     prompts = [
-        "A City in German with most diversities and cultures and history, what is that city? Answer in format: <answer>city_name</answer>",
-        "A Country that are in the European Union and start the World War 2, what is that country's capital? Answer in foramt: <answer>city_name</answer>",
+        "What is the capital city of Germany? Final answer should be surrounded by <answer> and </answer> tags.",
+        "Germany is a country in Europe. What is its capital city? Final answer should be surrounded by <answer> and </answer> tags.",
     ]
-    train(prompts, epochs=3, batch_size=2, lr=5e-5, max_new_tokens=100)
+    train(prompts, epochs=5, batch_size=2, lr=5e-5, max_new_tokens=100)
