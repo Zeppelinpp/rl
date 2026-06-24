@@ -23,16 +23,15 @@ class RolloutSample:
 def reward_fn(response: str):
     text = response.strip()
     lower = text.lower()
-    reward = 0.0
-
-    if "berlin" in lower:
-        reward += 0.7
     m = re.search(r"<answer>\s*(.*?)\s*</answer>", text, re.DOTALL | re.IGNORECASE)
-    if m is not None:
-        answer = m.group(1).strip().lower().strip(".。")
-        if answer == "berlin" and "<answer>" in text and "</answer>" in text:
-            reward += 0.2
-    return reward
+    if m is None:
+        if "berlin" in lower:
+            return 0.2
+        return 0.0
+    answer = m.group(1).strip().lower().strip(".。")
+    if answer != "berlin":
+        return -0.2
+    return 1.0
 
 
 def get_logprobs(model, input_ids, attention_mask):
@@ -145,7 +144,8 @@ def grpo_loss(model, batch: dict, clip_eps: float, kl_coef: float):
     kl_loss = compute_kl(new_logprobs, ref_logprobs)
 
     loss_per_token = (policy_loss + kl_coef * kl_loss) * response_mask
-    loss_per_sample = loss_per_token.sum() / response_mask.sum().clamp(min=1.0)
+    token_count_per_sample = response_mask.sum(dim=-1).clamp(min=1.0)
+    loss_per_sample = loss_per_token.sum(dim=-1) / token_count_per_sample
     loss = loss_per_sample.mean()
     denom = response_mask.sum().clamp(min=1.0)
 
@@ -208,8 +208,10 @@ def rollout(
         max_new_tokens=max_new_tokens,
         pad_token_id=tokenizer.pad_token_id,
         do_sample=True,
-        temperature=1.0,
+        temperature=1.2,
         top_p=0.95,
+        repetition_penalty=1.1,
+        no_repeat_ngram_size=3,
     ).to(device)  # [batch_size * group_size, seq_len]
     prompt_width = enc["input_ids"].shape[1]
     new_tokens = generated[:, prompt_width:]  # [B, new_len]
