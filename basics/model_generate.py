@@ -12,7 +12,10 @@ tokenizer = AutoTokenizer.from_pretrained(model_path)
 # print(tokenizer.bos_token_id) None
 # print(tokenizer.pad_token_id) 151643
 
-prompts = ["Hello, who are you?", "Hey there", "Who am I?"]
+prompts = [
+    "A City in German with most diversities and cultures and history, what is that city? Answer in format: <answer>city_name</answer>",
+    "A Country that are in the European Union and start the World War 2, what is that country's capital? Answer in foramt: <answer>city_name</answer>",
+]
 
 
 def apply_chat_template(prompts: List[str]):
@@ -25,6 +28,7 @@ def apply_chat_template(prompts: List[str]):
                 }
             ],
             tokenize=False,
+            enable_thinking=False,
             add_generation_prompt=True,
         )
         for prompt in prompts
