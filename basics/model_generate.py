@@ -53,6 +53,7 @@ input_len = input_ids["input_ids"].shape[1]
 print(input_ids)
 print(input_ids["input_ids"])
 print(input_ids["input_ids"].shape)
+print(input_ids["attention_mask"].sum(dim=1))
 print(tokenizer.batch_decode(output_ids[:, input_len:], skip_special_tokens=True))
 
 """
